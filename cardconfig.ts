@@ -16,46 +16,55 @@ RelativeKeyword=Exile, UpgradedRelativeKeyword=Exile, RelativeEffects=[],
 UpgradedRelativeEffects=[], RelativeCards=[], UpgradedRelativeCards=[], Owner=, ImageId=,
 UpgradeImageId=, Unfinished=False, Illustrator=灰木, SubIllustrator=[]}`
 
+const terminator = s.lookahead(s.oneOf("=,]}"))
 const spaces = s.optional(s.whitespace())
 const comma = s.sequence(s.string(","), spaces)
-
-const integer = s.takeLeft(s.integer(), s.lookahead(s.oneOf("=,]}")))
-const string = s.map(s.many1(s.noneOf("=,]}")), (xs) => xs.join(""))
-
-const boolean = s.choice(
-    s.mapTo(s.string("True"), true),
-    s.mapTo(s.string("False"), false),
-)
 const nullValue = s.mapTo(s.string("null"), null)
-
-const array = s.takeMid(
-    s.string("["),
-    s.optional(s.sepBy(string, comma)),
-    s.string("]"),
+const boolean = s.sequence(
+    s.choice(
+        s.mapTo(s.string("True"), true),
+        s.mapTo(s.string("False"), false),
+    ),
+    terminator,
 )
+// , Order=10, AutoPerform=True, Perform=[[2, MoonB]]
+const string = s.map(s.many1(s.noneOf("=,]}")), (xs) => xs.join(""))
+const integer = s.takeLeft(s.integer(), terminator)
 
-const value = s.choice(boolean, nullValue, array, integer, string)
+const grammar = s.grammar({
+    array() {
+        return s.takeMid(
+            s.string("["),
+            s.optional(s.sepBy(this.value, comma)),
+            s.string("]"),
+        )
+    },
+    value() {
+        return s.choice(this.array, boolean, nullValue, integer, string)
+    },
+})
+const array = grammar.array
+const value = grammar.value
 
 const key = s.map(s.many(s.noneOf("=")), (x) => camelCase(x.join("")))
 
 const entry = s.takeSides(key, s.string("="), s.optional(value))
 
-const cardName = s.takeLeft(s.takeUntil(s.any(), s.string("\n")), spaces)
-
-// s.map(s.many1(s.noneOf(":")), (xs) => xs.join("")),
-// s.sequence(s.string(":"), spaces),
-
-const cardConfig = s.sequence(
-    cardName,
-    s.map(
-        s.takeMid(
-            s.string("{"),
-            s.sepBy(entry, comma),
-            s.sequence(s.optional(comma), s.string("}")),
-        ),
-        (x) => Object.fromEntries(x) as Record<string, string>,
-    ),
+const cardName = s.takeLeft(
+    s.map(s.takeUntil(s.any(), s.string("\n")), ([xs]) => xs.join("")),
+    spaces,
 )
+
+const cardConfig = s.map(
+    s.takeMid(
+        s.string("{"),
+        s.sepBy(entry, comma),
+        s.sequence(s.optional(comma), s.string("}")),
+    ),
+    (x) => Object.fromEntries(x) as Record<string, string>,
+)
+
+const cardConfigEntry = s.sequence(cardName, cardConfig)
 
 export type CardConfig = {
     index: number
@@ -81,30 +90,42 @@ export type CardConfig = {
     moneyCost: string | null
 }
 
-console.log(
-    s.run(
-        s.takeLeft(
-            s.map(s.many1(s.noneOf(":")), (xs) => xs.join("")),
-            s.sequence(s.string(":"), spaces),
-        ),
-    )
-        .with("Hakurei Amulet: \n"),
-)
-
 if (import.meta.main) {
     const data = await Deno.readTextFile("demo/CardConfig.txt")
     const lines = data.trim().split("------------------------")
         .filter((x) => x.length).map((x) => x.trim())
-    const parser = s.run(cardConfig)
+
+    // const lines = [
+    //     `"True Full Moon:
+    //     {CardConfig Index=1316,Id=TrueMoon}`,
+    // ]
+    const parser = s.run(cardConfigEntry)
     const [oks, fails] = partition(
         lines.map((line) => ({ line, ...parser.with(line) })),
         (x) => x.isOk,
     )
     console.log(oks)
     console.log(fails.map((x) => {
-        // use span to get the error position
-        const error = x.line.slice(x.span[0], x.span[1])
-        return { ...x, error }
+        const error = x.line.slice(...x.span)
+        const errorMessage = `${x.line.slice(0, x.span[0])}<<${error}>>`
+        return { ...x, errorMessage }
     }))
     console.log(`oks: ${oks.length}, fails: ${fails.length}`)
+
+    console.log(
+        s.run(cardConfig).with(
+            `{CardConfig Index=656, Id=DollZuzhou, Order=10, AutoPerform=True, Perform=[], GunName=Simple1,\n" +
+      "GunNameBurst=Simple1, DebugLevel=2, Revealable=True, IsPooled=True, FindInBattle=True,\n" +
+      "HideMesuem=False, IsUpgradable=True, Rarity=Uncommon, Type=Skill, TargetType=Nobody, Colors=[B],\n" +
+      "IsXCost=False, Cost=2B, UpgradedCost=null, MoneyCost=null, Damage=null, UpgradedDamage=null,\n" +
+      "Block=null, UpgradedBlock=null, Shield=null, UpgradedShield=null, Value1=null, UpgradedValue1=null,\n" +
+      "Value2=null, UpgradedValue2=null, Mana=null, UpgradedMana=null, Scry=null, UpgradedScry=null,\n" +
+      "ToolPlayableTimes=null, Loyalty=null, UpgradedLoyalty=null, PassiveCost=null,\n" +
+      "UpgradedPassiveCost=null, ActiveCost=null, UpgradedActiveCost=null, UltimateCost=null,\n" +
+      "UpgradedUltimateCost=null, Keywords=None, UpgradedKeywords=None, EmptyDescription=False,\n" +
+      "RelativeKeyword=None, UpgradedRelativeKeyword=None, RelativeEffects=[], UpgradedRelativeEffects=[],\n" +
+      "RelativeCards=[], UpgradedRelativeCards=[], Owner=Alice, ImageId=, UpgradeImageId=,\n" +
+      "Unfinished=False, Illustrator=三折塔, SubIllustrator=[]}`,
+        ),
+    )
 }
