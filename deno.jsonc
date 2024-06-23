@@ -1,0 +1,15 @@
+{
+    "fmt": {
+        "semiColons": false,
+        "lineWidth": 100,
+        "useTabs": true,
+        "proseWrap": "never"
+    },
+    "compilerOptions": {
+        "exactOptionalPropertyTypes": true
+    },
+    "imports": {
+        "@std/yaml": "jsr:@std/yaml@^0.224.2",
+        "@valibot/valibot": "jsr:@valibot/valibot@^0.33.3"
+    }
+}
